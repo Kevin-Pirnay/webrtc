@@ -72,10 +72,6 @@ export class Caller extends RtcPeerUser
         const localMediaStream = await this.captureLocalMedia(); 
         const peerConnection = this.createRtcPeerConnection(recipientConnectionId);
         this.includeTheLocalStreamIntoTheRtcPeerConnectionToBeSent(localMediaStream, peerConnection); 
-
-        //duplication due to negotiationneeded event witch is throw automatically after the creation of the peerConnection
-        //const offer = await this.createAnOfferAndSetAsALocalDescription();
-        //if (offer) this.sendOffer(recipientConnectionId, offer);
     }
 
     private createRtcPeerConnection = (recipientConnectionId : string) : RTCPeerConnection =>
