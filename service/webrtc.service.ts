@@ -8,7 +8,17 @@ import { HubConnection } from '@microsoft/signalr';
 })
 export class WebrtcService 
 {
+    /* *** public *** */
+
     constructor(private _hubConnector : HubConnector, private _caller : Caller, private _recipient : Recipient) { }
+
+    public initRtcPeerConnection = async () : Promise<void> =>
+    {
+        await this.initConnectionWithSignalingServer();
+        this.initEventWebRtc();
+    }
+      
+    /* *** private *** */
 
     private initConnectionWithSignalingServer = async () =>
     {
@@ -21,13 +31,6 @@ export class WebrtcService
         this._hubConnector.on("offer",this._recipient.receiveOffer);
         this._hubConnector.on("ice-candidate",this._caller.handleIceCandidateMsg);
     }
-
-    public initRtcPeerConnection = async () : Promise<void> =>
-    {
-        await this.initConnectionWithSignalingServer();
-        this.initEventWebRtc();
-    }
-
 }
 
 export class RtcPeerUser
@@ -65,6 +68,8 @@ export class RtcPeerUser
   })
 export class Caller extends RtcPeerUser
 {
+    /* *** public *** */
+      
     constructor(private _hubConnector : HubConnector) { super(); }
 
     public callUser = async(recipientConnectionId : string) : Promise<void> =>
@@ -73,6 +78,20 @@ export class Caller extends RtcPeerUser
         const peerConnection = this.createRtcPeerConnection(recipientConnectionId);
         this.includeTheLocalStreamIntoTheRtcPeerConnectionToBeSent(localMediaStream, peerConnection); 
     }
+      
+    public handleIceCandidateMsg = (incoming : any) : void =>
+    {
+        const candidate = new RTCIceCandidate(incoming);
+        
+        this.getPeerConnectionSaved().addIceCandidate(candidate); 
+    }
+      
+    public receiveAnswer = (answer : Payload, peerConnection : RTCPeerConnection) : void =>
+    {
+        peerConnection.setRemoteDescription(answer.sdp);
+    }
+      
+    /* *** private *** */
 
     private createRtcPeerConnection = (recipientConnectionId : string) : RTCPeerConnection =>
     {
@@ -103,13 +122,6 @@ export class Caller extends RtcPeerUser
         }
     }
 
-    public handleIceCandidateMsg = (incoming : any) : void =>
-    {
-        const candidate = new RTCIceCandidate(incoming);
-        
-        this.getPeerConnectionSaved().addIceCandidate(candidate); 
-    }
-
     private handleIceCandidateEvent = (e : any) : void =>
     {
         //trigger automatically when the caller set remote description
@@ -125,11 +137,6 @@ export class Caller extends RtcPeerUser
         const offer = await this.createAnOfferAndSetAsALocalDescription(peerConnection);
         this.prepareToReceiveAnswerEvent(peerConnection);
         if (offer) this.sendOffer(recipientConnectionId,offer);
-    }
-
-    public receiveAnswer = (answer : Payload, peerConnection : RTCPeerConnection) : void =>
-    {
-        peerConnection.setRemoteDescription(answer.sdp);
     }
 
     private prepareToReceiveAnswerEvent = (peerConnection : RTCPeerConnection) : void =>
@@ -154,6 +161,8 @@ export class Caller extends RtcPeerUser
   })
 export class Recipient extends RtcPeerUser
 {
+    /* *** public *** */
+      
     constructor(private _hubConnector : HubConnector) { super() }
 
     public receiveOffer = async(offer : Payload) : Promise<void> =>
@@ -165,6 +174,8 @@ export class Recipient extends RtcPeerUser
         const answer = await this.createAnswerAndSetAsLocalDescription(peerConnection);
         if (answer) this.sendAnswer(offer,answer);
     }
+      
+    /* *** private *** */
 
     private createRtcPeerConnection = () : RTCPeerConnection =>
     {
@@ -208,13 +219,34 @@ export class Recipient extends RtcPeerUser
   })
 export class HubConnector
 {
-    private _connection : signalR.HubConnection | null = null;
-    private _roomName : string = "myRoom";
+    /* *** public *** */
+      
     public myConnectionId : string | null = null;
     public otherUserPeerConnectionId : string | null = null;
+      
+    public invoke = <T>(event : string, data : T) : void =>
+    {
+        this.getTheConnectionSaved().invoke(event,data);
+    }
 
-
-
+    public on = <T>(event : string, callback : (data : T)=> void) : void =>
+    {
+        this.getTheConnectionSaved().on(event,callback);
+    }
+      
+    public initConnection = async () : Promise<void> =>
+    {
+        const connection = this.createConnection();
+        await this.startConnection(connection);
+        this.initEvent(connection);
+        this.joinTheRoom();
+    }
+      
+    /* *** private *** */
+      
+    private _connection : signalR.HubConnection | null = null;
+    private _roomName : string = "myRoom";
+    
     private createConnection = () : HubConnection =>
     {
         const connection = new signalR.HubConnectionBuilder()
@@ -235,29 +267,11 @@ export class HubConnector
         else throw new Error("no connection is currently set");
     }
 
-    public invoke = <T>(event : string, data : T) : void =>
-    {
-        this.getTheConnectionSaved().invoke(event,data);
-    }
-
-    public on = <T>(event : string, callback : (data : T)=> void) : void =>
-    {
-        this.getTheConnectionSaved().on(event,callback);
-    }
-
     private startConnection = async (connection : HubConnection) : Promise<void> =>
     {
         await connection.start();
         connection.on("connection",(connectionId : string)=> this.myConnectionId = connectionId);
         connection.invoke("connection");
-    }
-
-    public initConnection = async () : Promise<void> =>
-    {
-        const connection = this.createConnection();
-        await this.startConnection(connection);
-        this.initEvent(connection);
-        this.joinTheRoom();
     }
 
     private initEvent = (connection : HubConnection) : void =>
